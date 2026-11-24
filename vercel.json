@@ -1,0 +1,7 @@
+{
+  "crons": [{ "path": "/api/cron/cleanup", "schedule": "15 3 * * *" }],
+  "functions": {
+    "src/app/api/admin/export/route.ts": { "maxDuration": 300 },
+    "src/app/api/cron/cleanup/route.ts": { "maxDuration": 60 }
+  }
+}
