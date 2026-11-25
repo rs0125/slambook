@@ -30,6 +30,7 @@ before(async () => {
     "202611240001_slambook",
     "202611240002_cleanup",
     "202611260001_direct_database",
+    "202611260002_unsaid_note",
   ])
     await db.exec(
       await readFile(
@@ -269,6 +270,50 @@ test("SQL rejects missing and oversized answers without creating partial entries
     /INVALID_ENTRY/,
   );
   assert.equal((await db.query("select * from public.entries")).rows.length, 0);
+});
+
+test("the unsaid note persists while old entries remain valid and invalid values roll back", async () => {
+  const { id } = await prepare();
+  const note = "I appreciated those check-ins more than I said.";
+  const entryId = await finalize(id, [], {
+    ...entry,
+    answers: { ...entry.answers, unsaid_note: note },
+  });
+  const { rows } = await db.query<{ note: string }>(
+    "select answers->>'unsaid_note' as note from public.entries where id=$1",
+    [entryId],
+  );
+  assert.equal(rows[0].note, note);
+  const { unsaid_note: _unused, ...legacyAnswers } = entry.answers;
+  const legacy = await prepare();
+  await db.query("select public.finalize_entry($1,$2,$3::jsonb,'[]'::jsonb)", [
+    legacy.id,
+    hash,
+    JSON.stringify({ ...entry, answers: legacyAnswers }),
+  ]);
+  const invalid = await prepare();
+  for (const unsaid_note of [null, 12, {}, "x".repeat(2001)]) {
+    await assert.rejects(
+      db.query("select public.finalize_entry($1,$2,$3::jsonb,'[]'::jsonb)", [
+        invalid.id,
+        hash,
+        JSON.stringify({
+          ...entry,
+          answers: { ...entry.answers, unsaid_note },
+        }),
+      ]),
+      /entries_unsaid_note_check/,
+    );
+  }
+  assert.equal(
+    (
+      await db.query(
+        "select id from public.entries where submission_request_id=$1",
+        [invalid.id],
+      )
+    ).rows.length,
+    0,
+  );
 });
 test("deletion tombstones immediately hide entries and retain an idempotency receipt", async () => {
   const { id } = await prepare();

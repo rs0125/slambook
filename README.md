@@ -122,7 +122,7 @@ All seven application tables have RLS. Anonymous/non-owner API roles cannot read
 
 The original baseline creates an empty private Storage bucket for migration compatibility. The current application does not use it, issue signed Storage URLs, or require bucket policies.
 
-The questionnaire has three required answers: name, how you met, and favourite memory. Up to three JPEG/PNG/WebP photos are optional. Browser processing removes metadata, resizes to at most 2,000 pixels, and targets about 500 KB per photo. The server independently caps each stored photo at **2 MiB**, enforces MIME/size consistency, and decodes it with a 40-megapixel limit. HEIC, SVG, animation, audio and video are not accepted.
+The questionnaire has three required answers: name, how you met, and favourite memory. “Our memories” also includes an optional “Anything left unsaid?” note. Older entries and drafts without this answer remain valid. Up to three JPEG/PNG/WebP photos are optional. Browser processing removes metadata, resizes to at most 2,000 pixels, and targets about 500 KB per photo. The server independently caps each stored photo at **2 MiB**, enforces MIME/size consistency, and decodes it with a 40-megapixel limit. HEIC, SVG, animation, audio and video are not accepted.
 
 **Storage tradeoff:** photos count toward PostgreSQL space and database backups, rather than Supabase Storage quotas. This keeps the personal book on one protected backend without a privileged Storage API credential. Monitor database usage and download exports regularly; do not treat a small free database as unlimited photo storage.
 

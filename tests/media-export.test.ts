@@ -57,6 +57,7 @@ test("the export connects complete answers, captions and exact image bytes with 
   const entry: EntryRecord = {
     ...emptyEntry,
     name: "A friend",
+    answers: { ...emptyEntry.answers, unsaid_note: "Thanks for being there." },
     id: "entry-id",
     created_at: "2026-11-24T00:00:00Z",
     questionnaire_version: 1,
@@ -84,6 +85,10 @@ test("the export connects complete answers, captions and exact image bytes with 
   assert.deepEqual(files[manifest.entries[0].photos[0].file], bytes);
   const answers = JSON.parse(strFromU8(files["entries.json"]));
   assert.equal(answers.entries[0].name, "A friend");
+  assert.equal(
+    answers.entries[0].answers.unsaid_note,
+    "Thanks for being there.",
+  );
   assert.deepEqual(answers.entries[0].photo_ids, ["photo-id"]);
 });
 test("an export fails visibly instead of silently dropping a missing photo", async () => {

@@ -2,6 +2,14 @@
 
 Implementation date: 24 November 2026. Inputs: `Slam_Book_PRD.md`, `DESIGN(2).md`, and the requested name “Raghav’s Slambook” with a warm default introduction.
 
+## Optional memories note — 26 November 2026
+
+Added “Anything left unsaid?” to the end of the memories chapter with the hint “Something you’ve always wanted to tell me, but never could.” It uses the existing optional textarea style and 2,000-character limit. Shared question rendering includes it in preview and owner views; exports preserve the answer.
+
+Missing `unsaid_note` values default to an empty string when old entries are read. Existing drafts retain their contents, and v1 remains compatible. The additive fourth migration validates the optional JSON answer without backfilling or changing existing rows; it was applied through the Supabase session pooler after the direct endpoint timed out.
+
+Strict TypeScript, all 49 unit/database cases, and the production build pass. The targeted Chromium flow at 390 px verifies that the field is optional, survives refresh, reaches the submission payload, and appears in preview and the owner view. Database tests cover stored text, old payloads, and rejection of invalid/oversized values; the archive test verifies the exported note. A real production API submission on port 6001 also saved and read back the note from Supabase; its temporary entry and attempt were removed afterward.
+
 ## Prisma / live Supabase verification — 26 November 2026
 
 The backend now uses Prisma 7.10.1 and a restricted PostgreSQL application login. It no longer requires a service-role API key or uses Supabase Storage for photos. All three tracked migrations were applied to an empty dedicated project. The owner Auth account was provisioned and sign-in verified; the application owner UUID is bound to that identity. Direct and transaction-pooler connections both passed TLS certificate and hostname verification. Credentials are confined to ignored local environment files.

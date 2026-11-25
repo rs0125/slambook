@@ -77,6 +77,32 @@ test("upload requests reject injected paths, duplicate slots, type spoof declara
   ])
     assert.equal(uploadSchema.safeParse({ ...base, files }).success, false);
 });
+
+test("the optional unsaid note accepts old entries, trims text and rejects invalid values", () => {
+  const { unsaid_note: _unused, ...legacyAnswers } = valid.answers;
+  assert.equal(
+    entrySchema.parse({ ...valid, answers: legacyAnswers }).answers.unsaid_note,
+    "",
+  );
+  assert.equal(
+    entrySchema.parse({
+      ...valid,
+      answers: {
+        ...valid.answers,
+        unsaid_note: "  Thanks for always showing up.  ",
+      },
+    }).answers.unsaid_note,
+    "Thanks for always showing up.",
+  );
+  for (const unsaid_note of [null, 1, {}, "x".repeat(2001)])
+    assert.equal(
+      entrySchema.safeParse({
+        ...valid,
+        answers: { ...valid.answers, unsaid_note },
+      }).success,
+      false,
+    );
+});
 test("submission shape cannot nominate paths or duplicate media", () => {
   const input = {
     requestId: randomUUID(),

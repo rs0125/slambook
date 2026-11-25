@@ -106,6 +106,64 @@ test("required answers are clear, text survives refresh, and reset asks before c
   await page.getByRole("button", { name: "Yes, start fresh" }).click();
   await expect(page.getByLabel("What should I call you?")).toHaveValue("");
 });
+
+test("the optional memories note survives refresh and appears in preview, submission and owner view", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const note = "I really appreciated those check-ins during exams.";
+  const label = "Anything left unsaid?";
+  await openBook(page);
+  await page.getByLabel("What should I call you?").fill("Aditi");
+  await page.getByLabel("How did our paths cross?").fill("At college");
+  await page.getByRole("button", { name: "Keep going" }).click();
+  await page
+    .getByLabel("What’s a favourite memory we share?")
+    .fill("The class trip");
+  const field = page.getByLabel(label);
+  await expect(field).toHaveJSProperty("required", false);
+  await field.fill(note);
+  await expectNoOverflow(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("raghav-slambook:draft:v1")!).entry
+            .answers.unsaid_note,
+      ),
+    )
+    .toBe(note);
+  await page.reload();
+  await page.getByRole("button", { name: "Keep going" }).click();
+  await expect(page.getByLabel(label)).toHaveValue(note);
+  await page.getByRole("button", { name: "Keep going" }).click();
+  await page.getByRole("button", { name: "Keep going" }).click();
+  await page.getByRole("button", { name: "Preview my page" }).click();
+  await expect(page.getByRole("heading", { name: label })).toBeVisible();
+  await expect(page.getByText(note, { exact: true })).toBeVisible();
+  await page.route("**/api/uploads", (route) =>
+    route.fulfill({ json: { submitted: false, files: [] } }),
+  );
+  await page.route("**/api/submissions", (route) => {
+    expect(route.request().postDataJSON().entry.answers.unsaid_note).toBe(note);
+    return route.fulfill({ json: { submitted: true } });
+  });
+  await page.getByRole("button", { name: "Send my page" }).click();
+  await expect(
+    page.getByRole("heading", { name: "You’re part of the story." }),
+  ).toBeVisible();
+  await mockOwner(page);
+  await page.route(`**/api/admin/entries/${id}`, (route) =>
+    route.fulfill({
+      json: {
+        entry: { ...sample, answers: { ...sample.answers, unsaid_note: note } },
+      },
+    }),
+  );
+  await page.goto(`/admin/entries/${id}`);
+  await expect(page.getByRole("heading", { name: label })).toBeVisible();
+  await expect(page.getByText(note, { exact: true })).toBeVisible();
+});
 test("phone gallery, captions, preview, interrupted submission, retry and draft clearing", async ({
   page,
 }) => {

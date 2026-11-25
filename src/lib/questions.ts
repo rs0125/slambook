@@ -50,6 +50,14 @@ export const questions = [
     step: 2,
   },
   {
+    key: "unsaid_note",
+    label: "Anything left unsaid?",
+    description: "Something you’ve always wanted to tell me, but never could.",
+    required: false,
+    placeholder: "I’ve been meaning to tell you…",
+    step: 2,
+  },
+  {
     key: "three_words",
     label: "You, in three words. Right now.",
     description: "A tiny time capsule of who you are today.",
@@ -79,6 +87,8 @@ export const answersSchema = z
     favourite_memory: requiredAnswer,
     inside_joke: longAnswer,
     song: longAnswer,
+    // Additive optional question: older entries and open tabs remain valid.
+    unsaid_note: longAnswer.default(""),
     three_words: longAnswer,
     future_message: longAnswer,
   })
@@ -106,6 +116,7 @@ export const emptyEntry: EntryInput = {
     favourite_memory: "",
     inside_joke: "",
     song: "",
+    unsaid_note: "",
     three_words: "",
     future_message: "",
   },
