@@ -10,3 +10,4 @@ playwright-report/
 .vercel/
 artifacts/
 .local-demo/
+src/generated/prisma/

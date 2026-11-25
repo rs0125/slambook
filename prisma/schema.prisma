@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Settings {
+  id               Int     @id @default(1) @db.SmallInt
+  owner_id         String? @db.Uuid
+  submissions_open Boolean @default(true)
+  welcome_text     String  @default("Some of my favourite stories have you in them. Let’s keep a little piece of those days — the first hellos, the ridiculous laughs, and everything in between.")
+
+  @@map("settings")
+}
+
+model Entry {
+  id                    String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                  String
+  nickname              String       @default("")
+  answers               Json
+  questionnaire_version Int          @default(1)
+  contact_handle        String       @default("")
+  submission_request_id String       @unique @db.Uuid
+  created_at            DateTime     @default(now()) @db.Timestamptz(3)
+  deleted_at            DateTime?    @db.Timestamptz
+  entry_media           EntryMedia[]
+
+  @@map("entries")
+}
+
+model SubmissionAttempt {
+  id                 String       @id @db.Uuid
+  token_hash         String
+  created_at         DateTime     @default(now()) @db.Timestamptz
+  expires_at         DateTime     @default(dbgenerated("(now() + '24:00:00'::interval)")) @db.Timestamptz
+  completed_entry_id String?      @db.Uuid
+  files              UploadFile[]
+
+  @@map("submission_attempts")
+}
+
+model UploadFile {
+  id           String            @id @db.Uuid
+  attempt_id   String            @db.Uuid
+  storage_path String            @unique
+  size_bytes   Int
+  mime_type    String
+  active       Boolean           @default(true)
+  verified     Boolean           @default(false)
+  created_at   DateTime          @default(now()) @db.Timestamptz
+  attempt      SubmissionAttempt @relation(fields: [attempt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  blob         UploadBlob?
+  media        EntryMedia?
+
+  @@index([attempt_id], map: "upload_files_attempt_idx")
+  @@map("upload_files")
+}
+
+model UploadBlob {
+  id    String     @id @db.Uuid
+  bytes Bytes
+  file  UploadFile @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("upload_blobs")
+}
+
+model EntryMedia {
+  id           String     @id @db.Uuid
+  entry_id     String     @db.Uuid
+  storage_path String     @unique
+  caption      String     @default("")
+  size_bytes   Int
+  mime_type    String
+  sort_order   Int        @db.SmallInt
+  created_at   DateTime   @default(now()) @db.Timestamptz
+  file         UploadFile @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  entry        Entry      @relation(fields: [entry_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([entry_id, sort_order])
+  @@index([entry_id], map: "entry_media_entry_idx")
+  @@map("entry_media")
+}
+
+model RateLimit {
+  key               String   @id
+  window_started_at DateTime @default(now()) @db.Timestamptz
+  hits              Int      @default(1)
+
+  @@map("rate_limits")
+}

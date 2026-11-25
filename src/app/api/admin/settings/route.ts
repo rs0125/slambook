@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
-import { assertOrigin, dbError, handleError, json, readBody } from "@/lib/http";
-import { serviceClient } from "@/lib/supabase/service";
+import { assertOrigin, handleError, json, readBody } from "@/lib/http";
+import { database } from "@/lib/database";
 import { demoStore } from "@/lib/demo";
 import { isLocalDemo } from "@/lib/demo-mode";
 
@@ -23,11 +23,7 @@ export async function PATCH(request: Request) {
       await demoStore().updateSettings(input);
       return json({ ok: true });
     }
-    const { error } = await serviceClient()
-      .from("settings")
-      .update(input)
-      .eq("id", 1);
-    dbError(error);
+    await database().settings.update({ where: { id: 1 }, data: input });
     return json({ ok: true });
   } catch (error) {
     return handleError(error);

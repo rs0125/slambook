@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authClient } from "@/lib/supabase/server";
-import { serviceClient } from "@/lib/supabase/service";
+import { database } from "@/lib/database";
 import {
   ApiError,
   assertOrigin,
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       await requireOwner();
       return json({ ok: true });
     }
-    serviceClient();
+    database();
     assertOrigin(request);
     await rateLimit(request, "login");
     const credentials = await readBody(

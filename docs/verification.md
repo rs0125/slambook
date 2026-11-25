@@ -2,6 +2,30 @@
 
 Implementation date: 24 November 2026. Inputs: `Slam_Book_PRD.md`, `DESIGN(2).md`, and the requested name “Raghav’s Slambook” with a warm default introduction.
 
+## Prisma / live Supabase verification — 26 November 2026
+
+The backend now uses Prisma 7.10.1 and a restricted PostgreSQL application login. It no longer requires a service-role API key or uses Supabase Storage for photos. All three tracked migrations were applied to an empty dedicated project. The owner Auth account was provisioned and sign-in verified; the application owner UUID is bound to that identity. Direct and transaction-pooler connections both passed TLS certificate and hostname verification. Credentials are confined to ignored local environment files.
+
+Executed against the **production Next.js build on localhost:6001**, with the real Supabase backend and the same transaction pooler prepared for Vercel:
+
+- Anonymous owner/session/photo/export access and cross-origin mutation denial.
+- Real owner login, authenticated cookie session and sign-out.
+- Real image upload, wrong-proof rejection, corrupt-byte rejection, and safe retries.
+- Two concurrent final submissions produce exactly one entry.
+- Literal name search, authenticated private image bytes, direct anonymous Data API denial, and ZIP contents matching the uploaded image.
+- Closed submissions reject new/in-flight attempts while acknowledging completed submissions.
+- Authenticated cron cleanup removes abandoned uploads and retains referenced photos.
+- Entry deletion atomically removes its image bytes. A late retry cannot recreate it.
+- Cleanup removed all test entries, photos, attempts, uploads and local limiter rows. Final counts were **0** for each; the owner and open-book setting remain configured.
+
+The live test harness is `scripts/test-live.ts`, requires explicit opt-in and credentials, and scopes cleanup to test UUIDs. It does not truncate user tables. Database unit tests now include private blob permissions, immutable uploads, completed/expired/closed attempts and deletion cascades. Strict TypeScript checks, all **47 unit/database cases** across seven files, and the production Turbopack build pass. The sandbox could not parse Next's TypeScript subprocess output; the complete production build succeeded outside the sandbox.
+
+The dependency audit initially reported Sharp image-decoder advisories and an Effect advisory in Prisma's CLI dependency tree. Sharp is now 0.35.5 and Effect is pinned to compatible 3.22.5. `npm audit` reports **zero known vulnerabilities** after the updates. The runtime does not log Prisma query bodies or credentials.
+
+All **16 browser scenarios** passed against Chromium, including 320, 375, 390, 768 and 1440 px layouts. The first full run passed 14; two newly exercised tests had ambiguous alert selectors because Next adds its own route announcer. Scoping those assertions to the main content fixed the tests. The two corrected scenarios and the photo flow (now also checking its proof header) passed on the targeted rerun. Test data for UI scenarios was mocked and separate from the real-backend integration run.
+
+The app remains available as a production build on `localhost:6001`. The transaction-pooler runtime configuration is prepared in ignored `.env.vercel`; its origin placeholder must be replaced before deploying. Vercel deployment, platform-delivered cron execution and physical-device testing are not claimed as completed. Historical notes below describe the earlier Storage-backed implementation and checks at that time; the Prisma/live results above supersede those backend-specific limitations.
+
 ## Adversarial review — 24 November 2026
 
 Reviewed guest submission and draft recovery, owner reads and mutations, authentication boundaries, database policies/RPCs, private media, ZIP exports, the local demo store, and animation lifecycle cleanup. The following verified failure paths were fixed:
@@ -88,7 +112,7 @@ Owner screenshots contain explicitly mocked test entries. The real homepage cont
 
 ## Environment-dependent verification still required
 
-No live Supabase project credentials or Vercel deployment were supplied. The following are not represented as completed:
+The earlier local-only checks below have now been superseded by the live Supabase results above. A Vercel deployment has not been performed in this task; deployed origin/cookie behaviour, scheduled cron delivery and physical-device testing remain to be verified. Historical outstanding checks were:
 
 1. Apply the migrations to the chosen Supabase project and verify its existing policies do not grant broader table or bucket access.
 2. Use the real owner account to sign in, read/search/export/delete an entry, and close/reopen submissions. Verify a second, non-owner account is rejected by application APIs and direct Supabase reads.

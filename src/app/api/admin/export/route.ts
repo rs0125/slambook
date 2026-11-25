@@ -1,52 +1,49 @@
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
-import { ApiError, dbError, handleError } from "@/lib/http";
-import { serviceClient, BUCKET } from "@/lib/supabase/service";
+import { ApiError, handleError } from "@/lib/http";
+import { database } from "@/lib/database";
 import {
   collectExportEntries,
   createExportStream,
   EXPORT_PAGE_SIZE,
 } from "@/lib/export";
-import type { EntryRecord } from "@/lib/questions";
 import { demoStore } from "@/lib/demo";
 import { isLocalDemo } from "@/lib/demo-mode";
-import { quoteFilterValue } from "@/lib/postgrest-filters";
+import { readPhoto, serializeEntry } from "@/lib/entries";
 export const maxDuration = 300;
 export async function GET(request: Request) {
   try {
     await requireOwner();
     const demo = isLocalDemo() ? demoStore() : null;
-    const db = demo ? null : serviceClient();
+    const db = demo ? null : database();
     const rawId = new URL(request.url).searchParams.get("id");
     const id = rawId ? z.uuid().parse(rawId) : undefined;
     const snapshot = new Date().toISOString();
     const entries = demo
       ? await demo.exportEntries(id)
       : await collectExportEntries(async (cursor) => {
-          let query = db!
-            .from("entries")
-            .select(
-              "id,name,nickname,answers,contact_handle,created_at,questionnaire_version,entry_media(*)",
-            )
-            .is("deleted_at", null)
-            .lte("created_at", snapshot)
-            .order("created_at")
-            .order("id")
-            .limit(EXPORT_PAGE_SIZE)
-            .abortSignal(request.signal);
-          if (id) query = query.eq("id", id);
-          if (cursor)
-            query = query.or(
-              `created_at.gt.${quoteFilterValue(cursor.created_at)},and(created_at.eq.${quoteFilterValue(cursor.created_at)},id.gt.${quoteFilterValue(cursor.id)})`,
-            );
-          const { data, error } = await query;
-          dbError(error);
-          if (!data)
-            throw new ApiError(
-              503,
-              "Your export couldn’t be prepared. Please try again.",
-            );
-          return data as EntryRecord[];
+          request.signal.throwIfAborted();
+          const rows = await db!.entry.findMany({
+            where: {
+              deleted_at: null,
+              created_at: { lte: new Date(snapshot) },
+              ...(id && { id }),
+              ...(cursor && {
+                OR: [
+                  { created_at: { gt: new Date(cursor.created_at) } },
+                  {
+                    created_at: new Date(cursor.created_at),
+                    id: { gt: cursor.id },
+                  },
+                ],
+              }),
+            },
+            include: { entry_media: { orderBy: { sort_order: "asc" } } },
+            orderBy: [{ created_at: "asc" }, { id: "asc" }],
+            take: EXPORT_PAGE_SIZE,
+          });
+          request.signal.throwIfAborted();
+          return rows.map(serializeEntry);
         });
     if (id && !entries.length)
       throw new ApiError(404, "This entry could not be found.");
@@ -57,14 +54,12 @@ export async function GET(request: Request) {
       entries,
       async (path, signal) => {
         if (demo) return demo.download(path, signal);
-        const { data, error } = await db!.storage
-          .from(BUCKET)
-          .download(path, {}, { signal });
-        if (error || !data)
+        const photo = await readPhoto({ storage_path: path }, signal);
+        if (!photo)
           throw new Error(
             "Export interrupted: a photo could not be downloaded.",
           );
-        return new Uint8Array(await data.arrayBuffer());
+        return photo.bytes;
       },
       request.signal,
     );

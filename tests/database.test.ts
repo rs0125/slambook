@@ -26,10 +26,14 @@ before(async () => {
     grant usage on schema public, auth to anon, authenticated, service_role;
     grant execute on function auth.uid() to anon, authenticated, service_role;
     create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);`);
-  for (const file of ["202611240001_slambook.sql", "202611240002_cleanup.sql"])
+  for (const file of [
+    "202611240001_slambook",
+    "202611240002_cleanup",
+    "202611260001_direct_database",
+  ])
     await db.exec(
       await readFile(
-        new URL(`../supabase/migrations/${file}`, import.meta.url),
+        new URL(`../prisma/migrations/${file}/migration.sql`, import.meta.url),
         "utf8",
       ),
     );
@@ -46,6 +50,19 @@ beforeEach(async () => {
 after(async () => {
   await db?.close();
 });
+async function storePhoto(
+  requestId: string,
+  fileId: string,
+  bytes = new Uint8Array(600),
+  token = hash,
+) {
+  return db.query("select public.store_photo($1::uuid,$2,$3::uuid,$4::bytea)", [
+    requestId,
+    token,
+    fileId,
+    bytes,
+  ]);
+}
 async function prepare(id = randomUUID(), files: unknown[] = [], token = hash) {
   const result = await db.query<{
     result: { submitted: boolean; files: { storage_path: string }[] };
@@ -88,7 +105,7 @@ test("every application table enables RLS; the photo bucket is private with a ha
   const { rows } = await db.query<{ relrowsecurity: boolean }>(
     "select relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'",
   );
-  assert.equal(rows.length, 6);
+  assert.equal(rows.length, 7);
   assert.ok(rows.every((row) => row.relrowsecurity));
   const { rows: buckets } = await db.query<{
     public: boolean;
@@ -208,9 +225,10 @@ test("an entry commits only once every selected upload is verified and owned by 
   const media = [{ id: file.id, caption: "A good day" }];
   await assert.rejects(finalize(id, media), /INVALID_MEDIA/);
   assert.equal((await db.query("select * from public.entries")).rows.length, 0);
-  await db.query("update public.upload_files set verified=true where id=$1", [
-    file.id,
-  ]);
+  await db.query(
+    "with blob as (insert into public.upload_blobs (id,bytes) select id, decode(repeat('00',size_bytes),'hex') from public.upload_files where id=$1) update public.upload_files set verified=true where id=$1",
+    [file.id],
+  );
   await assert.rejects(
     finalize(id, [{ id: randomUUID(), caption: "" }]),
     /INVALID_MEDIA/,
@@ -292,9 +310,10 @@ test("persistent rate limiting admits only the configured number of requests", a
 test("cleanup excludes referenced images and recent tokens, then removes abandoned uploads", async () => {
   const file = { id: randomUUID(), size: 600, mime: "image/jpeg" };
   const kept = await prepare(undefined, [file]);
-  await db.query("update public.upload_files set verified=true where id=$1", [
-    file.id,
-  ]);
+  await db.query(
+    "with blob as (insert into public.upload_blobs (id,bytes) select id, decode(repeat('00',size_bytes),'hex') from public.upload_files where id=$1) update public.upload_files set verified=true where id=$1",
+    [file.id],
+  );
   await finalize(kept.id, [{ id: file.id, caption: "" }]);
   const abandoned = await prepare(undefined, [{ ...file, id: randomUUID() }]);
   await db.exec(
@@ -324,4 +343,105 @@ test("cleanup excludes referenced images and recent tokens, then removes abandon
     ).rows.length,
     1,
   );
+});
+
+test("private photo writes verify the proof, active manifest and byte count; retries cannot overwrite", async () => {
+  const file = { id: randomUUID(), size: 600, mime: "image/jpeg" };
+  const { id } = await prepare(undefined, [file]);
+  await assert.rejects(
+    storePhoto(id, file.id, new Uint8Array(600), "b".repeat(64)),
+    /INVALID_ATTEMPT/,
+  );
+  await assert.rejects(
+    storePhoto(id, file.id, new Uint8Array(601)),
+    /INVALID_MEDIA/,
+  );
+  await assert.rejects(storePhoto(id, randomUUID()), /INVALID_MEDIA/);
+  await storePhoto(id, file.id, new Uint8Array(600).fill(5));
+  await storePhoto(id, file.id, new Uint8Array(600).fill(9));
+  const { rows } = await db.query<{ first_byte: number }>(
+    "select get_byte(bytes,0) as first_byte from public.upload_blobs where id=$1",
+    [file.id],
+  );
+  assert.equal(rows[0].first_byte, 5);
+  await prepare(id, []);
+  await assert.rejects(storePhoto(id, file.id), /INVALID_MEDIA/);
+});
+
+test("closed, expired and completed attempts cannot receive new photo bytes", async () => {
+  const file = { id: randomUUID(), size: 600, mime: "image/jpeg" };
+  const { id } = await prepare(undefined, [file]);
+  await db.exec("update public.settings set submissions_open=false");
+  await assert.rejects(storePhoto(id, file.id), /SUBMISSIONS_CLOSED/);
+  await db.exec("update public.settings set submissions_open=true");
+  await db.query(
+    "update public.submission_attempts set expires_at=now()-interval '1 hour' where id=$1",
+    [id],
+  );
+  await assert.rejects(storePhoto(id, file.id), /ATTEMPT_EXPIRED/);
+  await db.query(
+    "update public.submission_attempts set expires_at=now()+interval '1 hour' where id=$1",
+    [id],
+  );
+  await storePhoto(id, file.id);
+  await finalize(id, [{ id: file.id, caption: "" }]);
+  await assert.rejects(storePhoto(id, file.id), /ATTEMPT_COMPLETED/);
+});
+
+test("deleting an entry atomically deletes photo bytes and metadata, while retaining the receipt", async () => {
+  const file = { id: randomUUID(), size: 600, mime: "image/jpeg" };
+  const { id } = await prepare(undefined, [file]);
+  await storePhoto(id, file.id);
+  const entryId = await finalize(id, [{ id: file.id, caption: "" }]);
+  await db.query("delete from public.entries where id=$1", [entryId]);
+  assert.equal(
+    (await db.query("select * from public.upload_blobs")).rows.length,
+    0,
+  );
+  assert.equal(
+    (await db.query("select * from public.upload_files")).rows.length,
+    0,
+  );
+  assert.equal(
+    (await db.query("select * from public.entry_media")).rows.length,
+    0,
+  );
+  assert.equal(await finalize(id), entryId);
+});
+
+test("photo bytes are inaccessible to public API roles; backend role cannot access Auth or insert unvalidated entries", async () => {
+  for (const role of ["anon", "authenticated"] as const)
+    await asRole(role, owner, async () => {
+      await assert.rejects(
+        db.query("select * from public.upload_blobs"),
+        /permission denied/,
+      );
+      await assert.rejects(
+        db.query("select public.store_photo($1,$2,$3,$4)", [
+          randomUUID(),
+          hash,
+          randomUUID(),
+          new Uint8Array(600),
+        ]),
+        /permission denied/,
+      );
+    });
+  await db.exec("set role slambook_app");
+  try {
+    assert.equal(
+      (await db.query("select * from public.settings")).rows.length,
+      1,
+    );
+    await assert.rejects(
+      db.query("insert into public.entries default values"),
+      /permission denied/,
+    );
+    await assert.rejects(
+      db.query("create table public.unexpected (id int)"),
+      /permission denied/,
+    );
+    await assert.rejects(db.query("select auth.uid()"), /permission denied/);
+  } finally {
+    await db.exec("reset role");
+  }
 });

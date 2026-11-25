@@ -6,15 +6,22 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "demo": "node scripts/dev.mjs --demo",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start --hostname 0.0.0.0",
-    "check": "next typegen && tsc --noEmit",
+    "check": "prisma generate && next typegen && tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:e2e": "playwright test",
-    "verify": "npm run check && npm test && npm run build"
+    "verify": "npm run check && npm test && npm run build",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:setup": "node --import tsx scripts/setup-database.ts",
+    "test:live": "node --env-file-if-exists=.env.local --import tsx scripts/test-live.ts"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.8",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.119.2",
     "fflate": "^0.8.2",
@@ -22,7 +29,7 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "server-only": "^0.0.1",
-    "sharp": "^0.34.5",
+    "sharp": "0.35.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -31,7 +38,14 @@
     "@types/node": "^22.19.15",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "prisma": "7.10.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "effect": "3.22.5"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

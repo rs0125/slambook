@@ -137,6 +137,9 @@ test("phone gallery, captions, preview, interrupted submission, retry and draft 
   });
   await page.route("**/storage-test/photo", (route) => {
     expect(route.request().method()).toBe("PUT");
+    expect(route.request().headers()["x-submission-token"]).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
     uploads++;
     return route.fulfill({ json: { Key: "private/test" } });
   });
@@ -229,7 +232,9 @@ test("malformed save acknowledgements retain the draft and allow an idempotent r
   await fillRequired(page);
   await page.getByRole("button", { name: "Preview my page" }).click();
   await page.getByRole("button", { name: "Send my page" }).click();
-  await expect(page.getByRole("alert")).toContainText("incomplete response");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "incomplete response",
+  );
   expect(
     await page.evaluate(
       () =>
@@ -303,7 +308,9 @@ test("failed owner searches clear old results and lost owner access clears the p
     return route.fulfill({ json: { entries: [sample], total: 1, page: 1 } });
   });
   await page.getByLabel("Search entries by name or nickname").fill("failure");
-  await expect(page.getByRole("alert")).toContainText("Temporary outage");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Temporary outage",
+  );
   await expect(page.getByRole("heading", { name: "Aditi Sharma" })).toHaveCount(
     0,
   );

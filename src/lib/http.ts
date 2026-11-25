@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { serviceClient } from "@/lib/supabase/service";
+import { database } from "@/lib/database";
 import { DemoError, isDemoHost, isLocalDemo } from "@/lib/demo-mode";
 
 export class ApiError extends Error {
@@ -69,7 +69,7 @@ export function assertOrigin(request: Request) {
 }
 export async function rateLimit(
   request: Request,
-  action: "upload" | "submit" | "login",
+  action: "upload" | "photo" | "submit" | "login",
 ) {
   if (isLocalDemo()) return;
   // Vercel overwrites x-vercel-forwarded-for. Never trust arbitrary x-forwarded-for.
@@ -79,24 +79,27 @@ export async function rateLimit(
   const ip =
     (header ? request.headers.get(header)?.split(",")[0]?.trim() : null) ||
     "shared-origin";
+  const db = database();
   const key = createHmac("sha256", process.env.RATE_LIMIT_SECRET!)
     .update(`${action}:${ip}`)
     .digest("hex");
-  const { data, error } = await serviceClient().rpc("consume_rate_limit", {
-    p_key: key,
-    p_limit: action === "login" ? 10 : 30,
-    p_window_seconds: 3600,
+  const limit = action === "login" ? 10 : action === "photo" ? 90 : 30;
+  const rows = await db.$queryRaw<{ allowed: boolean }[]>`
+    select public.consume_rate_limit(${key}, ${limit}::integer, 3600) as allowed
+  `.catch(() => {
+    throw new ApiError(503, "Please try again in a moment.");
   });
-  if (error) throw new ApiError(503, "Please try again in a moment.");
-  if (!data)
+  if (!rows[0]?.allowed)
     throw new ApiError(
       429,
       "A few too many attempts. Please try again in an hour.",
       "RATE_LIMITED",
     );
 }
-export function dbError(error: { message: string } | null) {
-  if (!error) return;
+export function dbError(error: unknown): never {
+  // Prisma wraps SQL exceptions. Inspect only to map known codes; never expose
+  // its query context, connection string or submitted values to the browser.
+  const detail = error instanceof Error ? error.message : "";
   const codes: Record<string, [number, string]> = {
     SUBMISSIONS_CLOSED: [
       409,
@@ -109,9 +112,10 @@ export function dbError(error: { message: string } | null) {
     INVALID_ATTEMPT: [403, "This submission attempt could not be verified."],
     INVALID_MEDIA: [400, "Please reselect your photos and try again."],
     INVALID_ENTRY: [400, "Please check your answers and try again."],
+    ATTEMPT_COMPLETED: [409, "This entry has already been saved."],
   };
   for (const [code, [status, message]] of Object.entries(codes))
-    if (error.message.includes(code)) throw new ApiError(status, message, code);
+    if (detail.includes(code)) throw new ApiError(status, message, code);
   throw new ApiError(
     503,
     "The book couldn’t save that just now. Your answers are safe. Please try again.",

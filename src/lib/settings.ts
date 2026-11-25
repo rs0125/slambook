@@ -1,6 +1,6 @@
 import "server-only";
 import { DEFAULT_WELCOME, type PublicSettings } from "@/lib/questions";
-import { isConfigured, serviceClient } from "@/lib/supabase/service";
+import { isConfigured, database } from "@/lib/database";
 import { demoStore } from "@/lib/demo";
 import { isLocalDemo } from "@/lib/demo-mode";
 
@@ -12,16 +12,18 @@ export async function publicSettings(): Promise<PublicSettings> {
       welcome_text: DEFAULT_WELCOME,
       available: false,
     };
-  const { data, error } = await serviceClient()
-    .from("settings")
-    .select("submissions_open, welcome_text")
-    .eq("id", 1)
-    .single();
-  if (error || !data)
-    return {
-      submissions_open: false,
-      welcome_text: DEFAULT_WELCOME,
-      available: false,
-    };
-  return { ...data, available: true };
+  try {
+    const settings = await database().settings.findUnique({
+      where: { id: 1 },
+      select: { submissions_open: true, welcome_text: true },
+    });
+    if (settings) return { ...settings, available: true };
+  } catch {
+    // A database outage must never look like an accepted submission.
+  }
+  return {
+    submissions_open: false,
+    welcome_text: DEFAULT_WELCOME,
+    available: false,
+  };
 }

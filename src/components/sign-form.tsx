@@ -418,10 +418,16 @@ export function SignForm() {
           if (!authorized.url)
             throw new Error("Couldn’t prepare this photo. Please try again.");
           setStatus(`Uploading photo ${index + 1} of ${photos.length}…`);
-          await uploadPhoto(authorized.url, photo.file, (progress) =>
-            setPhotos((previous) =>
-              previous.map((p) => (p.id === photo.id ? { ...p, progress } : p)),
-            ),
+          await uploadPhoto(
+            authorized.url,
+            photo.file,
+            (progress) =>
+              setPhotos((previous) =>
+                previous.map((p) =>
+                  p.id === photo.id ? { ...p, progress } : p,
+                ),
+              ),
+            attempt.attemptToken,
           );
         }
         setPhotos((previous) =>

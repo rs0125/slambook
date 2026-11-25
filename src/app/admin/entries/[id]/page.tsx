@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { AdminApp } from "@/components/admin-app";
-import { isConfigured } from "@/lib/supabase/service";
+import { isConfigured } from "@/lib/database";
 export default async function EntryPage({
   params,
 }: {

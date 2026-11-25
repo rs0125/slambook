@@ -165,11 +165,18 @@ export function uploadPhoto(
   url: string,
   file: File,
   onProgress: (percentage: number) => void,
+  attemptToken?: string,
 ) {
   return new Promise<void>((resolve, reject) => {
+    const target = new URL(url, window.location.origin);
+    if (attemptToken && target.origin !== window.location.origin) {
+      reject(new Error("This photo upload address could not be verified."));
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", file.type);
+    if (attemptToken) xhr.setRequestHeader("X-Submission-Token", attemptToken);
     xhr.setRequestHeader("cache-control", "private, max-age=0");
     xhr.timeout = 120_000;
     xhr.upload.onprogress = (event) => {
